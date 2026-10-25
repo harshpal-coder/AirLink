@@ -1870,6 +1870,538 @@ fetchSupporters(); // Initial sync on load
         });
     });
 
+    // --- OTP Orbit Animation — CINEMATIC (10 seconds) ---
+    function playOtpOrbitAnimation(digits, onComplete) {
+        var BURST_MS    = 500;    // phase 1: digit burst-in
+        var ORBIT_MS    = 8200;   // phase 2: full orbit window
+        var COLLAPSE_MS = 750;    // phase 3: converge + effects
+        var FADEOUT_MS  = 600;    // overlay fade-out
+        var REVOLUTIONS = 6;      // total orbit revolutions
+        var W  = window.innerWidth;
+        var H  = window.innerHeight;
+        var CX = W / 2;
+        var CY = H / 2;
+        var RADIUS = Math.min(W, H) * 0.20;
+
+        // ── Three orbit phases ─────────────────────────────────────
+        // Each phase: { startFrac, endFrac, label, speedMult, hueBase }
+        var PHASES = [
+            { startFrac: 0,    endFrac: 0.33, label: 'SCANNING',   speedMult: 1.0, hueBase: 180 },
+            { startFrac: 0.33, endFrac: 0.70, label: 'ANALYZING',  speedMult: 1.5, hueBase: 220 },
+            { startFrac: 0.70, endFrac: 1.00, label: 'DECRYPTING', speedMult: 0.4, hueBase: 150 }
+        ];
+        var currentPhaseIdx = 0;
+
+        // ── Build overlay ──────────────────────────────────────────
+        var overlay = document.createElement('div');
+        overlay.className = 'otp-orbit-overlay';
+
+        // Cinematic letterbox bars
+        var lbTop = document.createElement('div');
+        lbTop.className = 'otp-letterbox top';
+        var lbBot = document.createElement('div');
+        lbBot.className = 'otp-letterbox bottom';
+        overlay.appendChild(lbTop);
+        overlay.appendChild(lbBot);
+
+        // Vignette darkens edges for cinematic feel
+        var vignette = document.createElement('div');
+        vignette.className = 'otp-vignette';
+        overlay.appendChild(vignette);
+
+        // Binary rain canvas (behind everything)
+        var rainCanvas = document.createElement('canvas');
+        rainCanvas.className = 'otp-rain-canvas';
+        rainCanvas.width  = W;
+        rainCanvas.height = H;
+        overlay.appendChild(rainCanvas);
+        var rCtx = rainCanvas.getContext('2d');
+
+        // Glow-trail canvas (sits above rain, below digits)
+        var trailCanvas = document.createElement('canvas');
+        trailCanvas.className = 'otp-trail-canvas';
+        trailCanvas.width  = W;
+        trailCanvas.height = H;
+        overlay.appendChild(trailCanvas);
+        var tCtx = trailCanvas.getContext('2d');
+
+        // Grid + scanline
+        var grid = document.createElement('div');
+        grid.className = 'otp-orbit-grid';
+        overlay.appendChild(grid);
+        var scanline = document.createElement('div');
+        scanline.className = 'otp-orbit-scanline';
+        overlay.appendChild(scanline);
+
+        // Centre pivot
+        var centre = document.createElement('div');
+        centre.className = 'otp-orbit-center';
+        overlay.appendChild(centre);
+
+        // Outer glow ring
+        var ring = document.createElement('div');
+        ring.className = 'otp-orbit-ring';
+        ring.style.width  = RADIUS * 2 + 'px';
+        ring.style.height = RADIUS * 2 + 'px';
+        centre.appendChild(ring);
+
+        // Inner dashed ring
+        var ringInner = document.createElement('div');
+        ringInner.className = 'otp-orbit-ring-inner';
+        ringInner.style.width  = RADIUS * 1.3 + 'px';
+        ringInner.style.height = RADIUS * 1.3 + 'px';
+        centre.appendChild(ringInner);
+
+        // Phase label: SCANNING / ANALYZING / DECRYPTING
+        var phaseLabel = document.createElement('div');
+        phaseLabel.className = 'otp-phase-label';
+        phaseLabel.textContent = 'SCANNING';
+        centre.appendChild(phaseLabel);
+
+        // Centre decrypt label
+        var label = document.createElement('div');
+        label.className = 'otp-orbit-label';
+        label.innerHTML = '<span class="decrypt-text">Decrypting<span class="decrypt-dots"></span></span>';
+        centre.appendChild(label);
+
+        // % counter
+        var pct = document.createElement('div');
+        pct.className = 'otp-orbit-percent';
+        pct.textContent = '0%';
+        centre.appendChild(pct);
+
+        // Six digit boxes
+        var digitEls = digits.map(function(d) {
+            var el = document.createElement('div');
+            el.className = 'otp-orbit-digit';
+            el.textContent = d;
+            el.style.left = '0px';
+            el.style.top  = '0px';
+            centre.appendChild(el);
+            return el;
+        });
+
+        // Checkmark SVG
+        var checkmark = document.createElement('div');
+        checkmark.className = 'otp-orbit-checkmark';
+        checkmark.innerHTML = [
+            '<svg viewBox="0 0 90 90" fill="none">',
+            '  <circle cx="45" cy="45" r="40" stroke="#00ff88" stroke-width="2.5" opacity="0.25"/>',
+            '  <circle cx="45" cy="45" r="40" stroke="#00ff88" stroke-width="2.5" opacity="0.2"',
+            '          stroke-dasharray="251" stroke-dashoffset="251">',
+            '    <animate attributeName="stroke-dashoffset" from="251" to="0" dur="0.55s" begin="0.05s" fill="freeze"/>',
+            '  </circle>',
+            '  <path d="M24 45 L37 58 L66 29" stroke="#00ff88" stroke-width="5"',
+            '        stroke-linecap="round" stroke-linejoin="round"',
+            '        stroke-dasharray="70" stroke-dashoffset="70">',
+            '    <animate attributeName="stroke-dashoffset" from="70" to="0" dur="0.5s" begin="0.3s" fill="freeze"/>',
+            '  </path>',
+            '</svg>'
+        ].join('');
+        centre.appendChild(checkmark);
+
+        document.body.appendChild(overlay);
+
+        // ── Binary matrix rain ─────────────────────────────────────
+        var RAIN_CHARS = '01アイウエオABCDEF#@%&!?0123456789';
+        var COL_W   = 20;
+        var cols    = Math.ceil(W / COL_W);
+        var drops   = [];
+        for (var ci = 0; ci < cols; ci++) drops[ci] = Math.random() * (H / 16);
+
+        function drawRain() {
+            rCtx.fillStyle = 'rgba(5,5,20,0.18)';
+            rCtx.fillRect(0, 0, W, H);
+            for (var c = 0; c < cols; c++) {
+                var ch  = RAIN_CHARS[Math.floor(Math.random() * RAIN_CHARS.length)];
+                var brt = Math.random() * 0.55 + 0.35;
+                rCtx.fillStyle = 'rgba(0,242,255,' + brt + ')';
+                rCtx.font = '13px monospace';
+                rCtx.fillText(ch, c * COL_W, drops[c] * 16);
+                if (drops[c] * 16 > H && Math.random() > 0.97) drops[c] = 0;
+                drops[c]++;
+            }
+        }
+
+        // ── Digit glitch effect ────────────────────────────────────
+        var GLITCH_CHARS = 'ABCDEF0123456789#@!%?';
+        var glitchTimer = setInterval(function() {
+            var i   = Math.floor(Math.random() * digitEls.length);
+            var el  = digitEls[i];
+            var old = digits[i];
+            el.classList.add('glitch');
+            el.textContent = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+            setTimeout(function() {
+                el.textContent = old;
+                el.classList.remove('glitch');
+            }, 90);
+        }, 380);
+
+        // ── Phase burst-in ─────────────────────────────────────────
+        digitEls.forEach(function(el, i) {
+            setTimeout(function() { el.classList.add('burst-in'); }, i * 50);
+        });
+
+        // ── Main orbit rAF loop ────────────────────────────────────
+        var orbitStart = null;
+        var lastTs     = null;
+        var rafId      = null;
+        var totalAngle = 0;          // accumulated angle (radians)
+        var trailActive = false;
+        var baseOmega   = (REVOLUTIONS * 2 * Math.PI) / ORBIT_MS; // rad/ms at speed×1
+
+        function updatePhase(progress) {
+            var newIdx = 0;
+            for (var pi = 0; pi < PHASES.length; pi++) {
+                if (progress >= PHASES[pi].startFrac) newIdx = pi;
+            }
+            if (newIdx !== currentPhaseIdx) {
+                currentPhaseIdx = newIdx;
+                // Fade out old label, swap text, fade back in
+                phaseLabel.style.opacity = '0';
+                phaseLabel.style.letterSpacing = '0.45em';
+                var phaseColors = ['rgba(0,242,255,0.75)', 'rgba(167,139,250,0.85)', 'rgba(251,191,36,0.85)'];
+                setTimeout(function() {
+                    phaseLabel.textContent    = PHASES[currentPhaseIdx].label;
+                    phaseLabel.style.color    = phaseColors[currentPhaseIdx];
+                    phaseLabel.style.opacity  = '1';
+                    phaseLabel.style.letterSpacing = '0.35em';
+                }, 300);
+            }
+        }
+
+        function orbitFrame(ts) {
+            if (!orbitStart) { orbitStart = ts; lastTs = ts; }
+            var dt       = ts - lastTs;
+            lastTs       = ts;
+            var elapsed  = ts - orbitStart;
+            var progress = Math.min(elapsed / ORBIT_MS, 1);
+
+            updatePhase(progress);
+
+            // Enable trails once in phase 2
+            if (progress > PHASES[1].startFrac && !trailActive) trailActive = true;
+
+            // Dynamic speed multiplier — final 15% slows dramatically for suspense
+            var speed = PHASES[currentPhaseIdx].speedMult;
+            if (progress > 0.85) {
+                var t = (progress - 0.85) / 0.15;
+                speed *= (1 - t) * 0.9 + 0.1; // ease toward near-zero
+            }
+
+            totalAngle += baseOmega * dt * speed;
+
+            // % counter ticks up
+            pct.textContent = Math.floor(progress * 99) + '%';
+
+            // Draw binary rain each frame
+            drawRain();
+
+            // Fade trail canvas slightly — comet tail effect
+            if (trailActive) {
+                tCtx.fillStyle = 'rgba(5,5,20,0.07)';
+                tCtx.fillRect(0, 0, W, H);
+            }
+
+            var ph = PHASES[currentPhaseIdx];
+            digitEls.forEach(function(el, i) {
+                var theta = totalAngle + (i * Math.PI * 2 / 6);
+                var x = Math.cos(theta) * RADIUS;
+                var y = Math.sin(theta) * RADIUS;
+                el.style.left = x + 'px';
+                el.style.top  = y + 'px';
+
+                // Hue shifts slowly per phase
+                var hue    = ph.hueBase + Math.sin(theta * 1.5 + i * 0.8) * 45;
+                var bright = 62 + Math.sin(theta + i) * 12;
+                var glow   = 'hsla(' + hue + ',100%,' + bright + '%,';
+                el.style.color       = 'hsl('  + hue + ',100%,' + bright + '%)';
+                el.style.borderColor = glow    + '0.55)';
+                el.style.textShadow  = '0 0 18px ' + glow + '0.95), 0 0 40px ' + glow + '0.45)';
+                el.style.boxShadow   = '0 0 20px ' + glow + '0.15), inset 0 0 12px ' + glow + '0.06)';
+
+                // Draw radial glow trail on canvas
+                if (trailActive) {
+                    var ax = CX + x, ay = CY + y;
+                    var gr = tCtx.createRadialGradient(ax, ay, 0, ax, ay, 38);
+                    gr.addColorStop(0, glow + '0.28)');
+                    gr.addColorStop(1, glow + '0)');
+                    tCtx.fillStyle = gr;
+                    tCtx.beginPath();
+                    tCtx.arc(ax, ay, 38, 0, Math.PI * 2);
+                    tCtx.fill();
+                }
+            });
+
+            if (progress < 1) {
+                rafId = requestAnimationFrame(orbitFrame);
+            } else {
+                phaseCollapse();
+            }
+        }
+
+        setTimeout(function() {
+            rafId = requestAnimationFrame(orbitFrame);
+        }, BURST_MS);
+
+        // ── Phase 3: Collapse + cinematic finale ───────────────────
+        function phaseCollapse() {
+            clearInterval(glitchTimer);
+            cancelAnimationFrame(rafId);
+            pct.textContent = '100%';
+
+            // Converge all digits to centre
+            digitEls.forEach(function(el, i) {
+                el.style.transition = 'left 0.42s cubic-bezier(0.16,1,0.3,1), top 0.42s cubic-bezier(0.16,1,0.3,1)';
+                el.style.left = '0px';
+                el.style.top  = '0px';
+                // Flash green & collapse each digit with slight stagger
+                setTimeout(function() {
+                    el.classList.add('success-flash');
+                }, 380 + i * 35);
+            });
+
+            // Screen flash
+            setTimeout(function() {
+                var flash = document.createElement('div');
+                flash.className = 'otp-flash';
+                overlay.appendChild(flash);
+                setTimeout(function() {
+                    if (flash.parentNode) flash.parentNode.removeChild(flash);
+                }, 750);
+            }, 430);
+
+            // Checkmark + 'IDENTITY CONFIRMED' + particles
+            setTimeout(function() {
+                checkmark.classList.add('show');
+
+                // Change phase label to VERIFIED (green)
+                phaseLabel.style.opacity = '0';
+                setTimeout(function() {
+                    phaseLabel.textContent  = 'VERIFIED';
+                    phaseLabel.style.color  = '#00ff88';
+                    phaseLabel.style.opacity = '1';
+                    phaseLabel.style.letterSpacing = '0.45em';
+                }, 200);
+
+                // Clear centre label, show 'IDENTITY CONFIRMED'
+                label.innerHTML = '';
+                pct.style.display = 'none';
+                var idText = document.createElement('div');
+                idText.className = 'otp-identity-text';
+                idText.textContent = 'IDENTITY  CONFIRMED';
+                centre.appendChild(idText);
+
+                // 24-particle colour burst
+                var sparkColors = ['#00ff88','#00f2ff','#a78bfa','#f472b6','#fbbf24','#ffffff'];
+                for (var p = 0; p < 24; p++) {
+                    (function(idx) {
+                        var pt = document.createElement('div');
+                        pt.className = 'otp-orbit-particle';
+                        var ang  = (idx / 24) * Math.PI * 2;
+                        var dist = 80 + Math.random() * 110;
+                        var sz   = (2 + Math.random() * 5).toFixed(1) + 'px';
+                        pt.style.background = sparkColors[idx % sparkColors.length];
+                        pt.style.width  = sz;
+                        pt.style.height = sz;
+                        pt.style.setProperty('--px', (Math.cos(ang) * dist) + 'px');
+                        pt.style.setProperty('--py', (Math.sin(ang) * dist) + 'px');
+                        pt.style.boxShadow = '0 0 8px ' + sparkColors[idx % sparkColors.length];
+                        centre.appendChild(pt);
+                        setTimeout(function() { if (pt.parentNode) pt.parentNode.removeChild(pt); }, 1100);
+                    })(p);
+                }
+            }, 450);
+
+            // Fade out overlay then fire callback
+            setTimeout(function() {
+                overlay.classList.add('fade-out');
+                setTimeout(function() {
+                    overlay.remove();
+                    onComplete();
+                }, FADEOUT_MS);
+            }, COLLAPSE_MS);
+        }
+    }
+
+
+        // Compute orbit radius from viewport
+        const RADIUS = Math.min(window.innerWidth, window.innerHeight) * 0.20;
+
+        /* --- Build overlay DOM --- */
+        const overlay = document.createElement('div');
+        overlay.className = 'otp-orbit-overlay';
+
+        // Grid texture
+        const grid = document.createElement('div');
+        grid.className = 'otp-orbit-grid';
+        overlay.appendChild(grid);
+
+        // Scan line
+        const scanline = document.createElement('div');
+        scanline.className = 'otp-orbit-scanline';
+        overlay.appendChild(scanline);
+
+        // Centre pivot
+        const centre = document.createElement('div');
+        centre.className = 'otp-orbit-center';
+        overlay.appendChild(centre);
+
+        // Outer orbit ring
+        const ring = document.createElement('div');
+        ring.className = 'otp-orbit-ring';
+        ring.style.width  = RADIUS * 2 + 'px';
+        ring.style.height = RADIUS * 2 + 'px';
+        centre.appendChild(ring);
+
+        // Inner dashed ring
+        const ringInner = document.createElement('div');
+        ringInner.className = 'otp-orbit-ring-inner';
+        ringInner.style.width  = RADIUS * 1.3 + 'px';
+        ringInner.style.height = RADIUS * 1.3 + 'px';
+        centre.appendChild(ringInner);
+
+        // Centre label
+        const label = document.createElement('div');
+        label.className = 'otp-orbit-label';
+        label.innerHTML = '<span class="decrypt-text">Decrypting<span class="decrypt-dots"></span></span>';
+        centre.appendChild(label);
+
+        // % counter below label
+        const pct = document.createElement('div');
+        pct.className = 'otp-orbit-percent';
+        pct.textContent = '0%';
+        centre.appendChild(pct);
+
+        // Digit elements — start at screen centre
+        const digitEls = digits.map(function(d) {
+            const el = document.createElement('div');
+            el.className = 'otp-orbit-digit';
+            el.textContent = d;
+            el.style.left = '0px';
+            el.style.top  = '0px';
+            centre.appendChild(el);
+            return el;
+        });
+
+        // Checkmark (hidden initially)
+        const checkmark = document.createElement('div');
+        checkmark.className = 'otp-orbit-checkmark';
+        checkmark.innerHTML = [
+            '<svg viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">',
+            '  <circle cx="45" cy="45" r="40" stroke="#00ff88" stroke-width="2.5" opacity="0.3"/>',
+            '  <circle cx="45" cy="45" r="40" stroke="#00ff88" stroke-width="2.5" opacity="0.15"',
+            '          stroke-dasharray="251" stroke-dashoffset="251">',
+            '    <animate attributeName="stroke-dashoffset" from="251" to="0" dur="0.55s" begin="0.1s" fill="freeze"/>',
+            '  </circle>',
+            '  <path d="M26 45 L38 57 L64 31" stroke="#00ff88" stroke-width="4.5"',
+            '        stroke-linecap="round" stroke-linejoin="round"',
+            '        stroke-dasharray="65" stroke-dashoffset="65">',
+            '    <animate attributeName="stroke-dashoffset" from="65" to="0" dur="0.45s" begin="0.35s" fill="freeze"/>',
+            '  </path>',
+            '</svg>'
+        ].join('');
+        centre.appendChild(checkmark);
+
+        document.body.appendChild(overlay);
+
+        /* ---------- Phase 1: Burst in (0 → BURST_MS) ---------- */
+        digitEls.forEach(function(el, i) {
+            setTimeout(function() {
+                el.classList.add('burst-in');
+            }, i * 45);
+        });
+
+        /* ---------- Phase 2: Orbit via rAF (BURST_MS → BURST_MS + ORBIT_MS) ---------- */
+        var orbitStart  = null;
+        var rafId       = null;
+
+        function orbitFrame(ts) {
+            if (!orbitStart) orbitStart = ts;
+            var elapsed  = ts - orbitStart;
+            var progress = Math.min(elapsed / ORBIT_MS, 1);
+
+            // Ease-in / ease-out for orbit speed
+            var angle = progress * REVOLUTIONS * Math.PI * 2;
+
+            // Update % label (0-99 during orbit, 100 only at success)
+            pct.textContent = Math.floor(progress * 99) + '%';
+
+            digitEls.forEach(function(el, i) {
+                var theta = angle + (i * Math.PI * 2 / 6);
+                var x = Math.cos(theta) * RADIUS;
+                var y = Math.sin(theta) * RADIUS;
+                el.style.left = x + 'px';
+                el.style.top  = y + 'px';
+
+                // Colour shift as they orbit (cyan → purple hue range)
+                var hue    = 180 + Math.sin(theta * 2 + i) * 50;
+                var bright = 65 + Math.sin(theta + i) * 12;
+                el.style.color       = 'hsl(' + hue + ', 100%, ' + bright + '%)';
+                el.style.borderColor = 'hsla(' + hue + ', 100%, ' + bright + '%, 0.55)';
+                el.style.textShadow  = '0 0 18px hsla(' + hue + ',100%,' + bright + '%,0.9), 0 0 35px hsla(' + hue + ',100%,' + bright + '%,0.45)';
+            });
+
+            if (progress < 1) {
+                rafId = requestAnimationFrame(orbitFrame);
+            } else {
+                phaseCollapse();
+            }
+        }
+
+        setTimeout(function() {
+            rafId = requestAnimationFrame(orbitFrame);
+        }, BURST_MS);
+
+        /* ---------- Phase 3: Collapse + Checkmark ---------- */
+        function phaseCollapse() {
+            cancelAnimationFrame(rafId);
+            pct.textContent = '100%';
+
+            // Return each digit to centre and flash green
+            digitEls.forEach(function(el, i) {
+                el.style.transition = 'left 0.35s cubic-bezier(0.16,1,0.3,1), top 0.35s cubic-bezier(0.16,1,0.3,1)';
+                el.style.left = '0px';
+                el.style.top  = '0px';
+                setTimeout(function() {
+                    el.classList.add('success-flash');
+                }, 300 + i * 30);
+            });
+
+            // Show checkmark after digits converge
+            setTimeout(function() {
+                checkmark.classList.add('show');
+                label.innerHTML = '<span class="decrypt-text" style="color:#00ff88;letter-spacing:0.22em">Verified</span>';
+                pct.style.display = 'none';
+
+                // Particle burst
+                for (var p = 0; p < 20; p++) {
+                    (function(idx) {
+                        var particle = document.createElement('div');
+                        particle.className = 'otp-orbit-particle';
+                        var tAngle = (idx / 20) * Math.PI * 2;
+                        var dist   = 70 + Math.random() * 80;
+                        var colors = ['#00ff88','#00f2ff','#a78bfa','#f472b6'];
+                        particle.style.background = colors[idx % colors.length];
+                        particle.style.setProperty('--px', (Math.cos(tAngle) * dist) + 'px');
+                        particle.style.setProperty('--py', (Math.sin(tAngle) * dist) + 'px');
+                        centre.appendChild(particle);
+                        setTimeout(function() { particle.remove(); }, 1000);
+                    })(p);
+                }
+            }, 320);
+
+            // Fade out overlay and call callback
+            setTimeout(function() {
+                overlay.classList.add('fade-out');
+                setTimeout(function() {
+                    overlay.remove();
+                    onComplete();
+                }, FADEOUT_MS);
+            }, COLLAPSE_MS);
+        }
+    }
+
     function checkAllOtpInputs() {
         const otpValues = Array.from(otpInputs).map(i => i.value).join('');
         const section = document.getElementById('otp-section');
@@ -1884,8 +2416,6 @@ fetchSupporters(); // Initial sync on load
                 section.classList.remove('verifying');
                 if (otpValues === generatedOtp) {
                     emailVerified = true;
-                    otpStatus.textContent = '\u2705 Email verified!';
-                    otpStatus.className = 'submission-status otp-status-success';
                     triggerHaptic('success');
 
                     otpInputs.forEach(input => {
@@ -1893,10 +2423,13 @@ fetchSupporters(); // Initial sync on load
                         input.disabled = true;
                     });
 
-                    // Auto-submit: Transition directly to Step 2 ("Choose Your Tier")
-                    setTimeout(() => {
+                    // 🎬 Play orbit animation, then proceed to Step 2
+                    var digits = otpValues.split('');
+                    playOtpOrbitAnimation(digits, function() {
+                        otpStatus.textContent = '\u2705 Email verified!';
+                        otpStatus.className = 'submission-status otp-status-success';
                         goToStep(2);
-                    }, 800);
+                    });
                 } else {
                     emailVerified = false;
                     otpStatus.textContent = '\u274C Incorrect OTP. Please try again.';

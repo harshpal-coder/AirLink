@@ -3736,6 +3736,260 @@ body.intro-revealed .hero-image {
 
 
 /* ============================================
+   OTP ORBIT ANIMATION OVERLAY
+   ============================================ */
+
+/* Full-screen backdrop */
+.otp-orbit-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: rgba(5, 5, 20, 0.92);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: otpOverlayIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    pointer-events: all;
+    cursor: default;
+}
+
+@keyframes otpOverlayIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.otp-orbit-overlay.fade-out {
+    animation: otpOverlayOut 0.55s ease forwards;
+}
+
+@keyframes otpOverlayOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
+/* Pivot container — sits at exact screen centre */
+.otp-orbit-center {
+    position: relative;
+    width: 0;
+    height: 0;
+}
+
+/* Glowing orbit ring */
+.otp-orbit-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px solid rgba(0, 242, 255, 0.2);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 30px rgba(0, 242, 255, 0.08);
+    animation: orbitRingPulse 2s ease-in-out infinite;
+}
+
+.otp-orbit-ring-inner {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px dashed rgba(0, 242, 255, 0.1);
+    transform: translate(-50%, -50%);
+    animation: orbitRingRotate 8s linear infinite;
+}
+
+@keyframes orbitRingPulse {
+    0%, 100% {
+        border-color: rgba(0, 242, 255, 0.15);
+        box-shadow: 0 0 30px rgba(0, 242, 255, 0.06);
+    }
+    50% {
+        border-color: rgba(0, 242, 255, 0.45);
+        box-shadow: 0 0 60px rgba(0, 242, 255, 0.2), 0 0 120px rgba(0, 242, 255, 0.08);
+    }
+}
+
+@keyframes orbitRingRotate {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Individual orbiting digit boxes */
+.otp-orbit-digit {
+    position: absolute;
+    width: 58px;
+    height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.1rem;
+    font-weight: 900;
+    font-family: 'Inter', 'Outfit', sans-serif;
+    color: #00f2ff;
+    background: rgba(0, 242, 255, 0.07);
+    border: 2px solid rgba(0, 242, 255, 0.45);
+    border-radius: 16px;
+    transform: translate(-50%, -50%) scale(0);
+    text-shadow: 0 0 18px rgba(0, 242, 255, 0.9), 0 0 35px rgba(0, 242, 255, 0.5);
+    box-shadow:
+        0 0 20px rgba(0, 242, 255, 0.15),
+        inset 0 0 12px rgba(0, 242, 255, 0.06);
+    will-change: left, top, transform;
+    transition: color 0.4s, border-color 0.4s, box-shadow 0.4s;
+}
+
+/* Phase 1: Burst in from OTP box */
+.otp-orbit-digit.burst-in {
+    animation: digitBurstIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes digitBurstIn {
+    0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+    60%  { transform: translate(-50%, -50%) scale(1.22); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+}
+
+/* Phase 3: Converge success flash */
+.otp-orbit-digit.success-flash {
+    color: #00ff88 !important;
+    border-color: rgba(0, 255, 136, 0.7) !important;
+    background: rgba(0, 255, 136, 0.12) !important;
+    text-shadow: 0 0 25px rgba(0, 255, 136, 1), 0 0 50px rgba(0, 255, 136, 0.6) !important;
+    box-shadow: 0 0 35px rgba(0, 255, 136, 0.4), inset 0 0 15px rgba(0,255,136,0.1) !important;
+    animation: digitSuccessCollapse 0.65s cubic-bezier(0.6, -0.28, 0.74, 0.05) forwards;
+}
+
+@keyframes digitSuccessCollapse {
+    0%   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+    40%  { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0);    opacity: 0; }
+}
+
+/* Centre label — "Decrypting..." */
+.otp-orbit-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(0, 242, 255, 0.65);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+.otp-orbit-label .decrypt-text {
+    display: block;
+    animation: decryptPulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes decryptPulse {
+    from { opacity: 0.35; letter-spacing: 0.18em; }
+    to   { opacity: 1;    letter-spacing: 0.26em; }
+}
+
+/* Animated ellipsis */
+.otp-orbit-label .decrypt-dots::after {
+    content: '';
+    animation: dotsStep 1.2s steps(4, end) infinite;
+}
+
+@keyframes dotsStep {
+    0%  { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+}
+
+/* Animated percentage counter */
+.otp-orbit-percent {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% + 22px));
+    color: rgba(0, 242, 255, 0.45);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Checkmark reveal */
+.otp-orbit-checkmark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 90px;
+    height: 90px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.otp-orbit-checkmark.show {
+    animation: checkmarkAppear 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s forwards;
+}
+
+@keyframes checkmarkAppear {
+    0%   { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+    65%  { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+}
+
+/* Particle sparks */
+.otp-orbit-particle {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 1;
+    animation: particleFly 0.9s ease-out forwards;
+}
+
+@keyframes particleFly {
+    0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--px)), calc(-50% + var(--py))) scale(0); opacity: 0; }
+}
+
+/* Scan line that sweeps across the overlay */
+.otp-orbit-scanline {
+    position: absolute;
+    left: 0;
+    width: 100vw;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, rgba(0, 242, 255, 0.3) 40%, rgba(0, 242, 255, 0.8) 50%, rgba(0,242,255,0.3) 60%, transparent 100%);
+    animation: scanlineSweep 2.5s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes scanlineSweep {
+    0%   { top: -2px; opacity: 0; }
+    5%   { opacity: 1; }
+    95%  { opacity: 1; }
+    100% { top: 100vh; opacity: 0; }
+}
+
+/* Grid overlay texture */
+.otp-orbit-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0,242,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,242,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    animation: gridFadeIn 0.5s ease forwards;
+}
+
+@keyframes gridFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ============================================
    DISASTER MODE SIMULATOR — ENHANCED
    ============================================ */
 

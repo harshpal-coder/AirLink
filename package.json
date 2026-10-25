@@ -1,0 +1,20 @@
+{
+  "name": "airlink-website",
+  "version": "1.0.0",
+  "description": "Airlink | Secure P2P Mesh Messaging Website",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "airlink",
+    "p2p",
+    "messaging",
+    "mesh"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
